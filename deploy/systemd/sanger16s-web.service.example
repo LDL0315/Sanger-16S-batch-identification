@@ -1,0 +1,16 @@
+[Unit]
+Description=Sanger16S Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=sanger16s
+Group=sanger16s
+WorkingDirectory=/opt/sanger16s
+EnvironmentFile=/etc/default/sanger16s-web
+ExecStart=/bin/bash -lc 'source ~/.bashrc && conda activate ${CONDA_ENV_NAME} && python ${APP_DIR}/sanger16s.py serve --host ${SANGER16S_HOST} --port ${SANGER16S_PORT} --db-dir ${SANGER16S_DB_DIR} --db-version ${SANGER16S_DB_VERSION} --consensus-pipeline-script ${SANGER16S_PIPELINE_SCRIPT} --work-dir ${SANGER16S_WORK_DIR} --threads ${SANGER16S_THREADS} --queue-workers ${SANGER16S_QUEUE_WORKERS} --max-target-seqs ${SANGER16S_MAX_TARGET_SEQS} --max-upload-mb ${SANGER16S_MAX_UPLOAD_MB}'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

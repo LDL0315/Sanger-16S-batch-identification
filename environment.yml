@@ -6,3 +6,8 @@ channels:
 dependencies:
   - python>=3.10
   - blast
+  - flask
+  - seqkit
+  - vsearch
+  - minimap2
+  - samtools

@@ -1,122 +1,152 @@
-# Sanger 16S 批量鉴定工具
+# Sanger16S
 
-这个工具用于批量处理 Sanger 测序得到的细菌 16S FASTA 文件，并用本地
-NCBI 16S BLAST 数据库为每条序列找到最高一致性的命中结果，最终输出一个
-CSV 汇总文件。
+Sanger16S 是一个基于本地 NCBI BLAST 数据库的 16S 细菌鉴定工具，支持：
 
-## 1. 在 Linux 服务器上安装环境
+- 直接批量上传 FASTA 做 16S 鉴定
+- 上传 FASTQ/FASTQ.GZ，先生成共识序列，再做 16S 鉴定
+- 通过局域网网页批量提交任务、查看状态并下载结果
 
-推荐使用 Conda 或 Mamba，不需要 `sudo` 权限。
+## 快速入口
+
+- 中文 CLI 文档：[README.zh-CN.md](./README.zh-CN.md)
+- 中文网页部署文档：[WEBAPP.zh-CN.md](./WEBAPP.zh-CN.md)
+- 英文首页说明：[README.md](./README.md)
+- 版本变更记录：[CHANGELOG.md](./CHANGELOG.md)
+- 首个 release 文案：[RELEASE_NOTES_v0.5.0.md](./RELEASE_NOTES_v0.5.0.md)
+- 贡献说明：[CONTRIBUTING.md](./CONTRIBUTING.md)
+- 部署示例说明：[deploy/README.md](./deploy/README.md)
+
+## 仓库结构
+
+```text
+.
+├── sanger16s.py
+├── run_16s_consensus_pipeline.sh
+├── scripts/
+├── web/
+├── deploy/
+├── environment.yml
+├── LICENSE
+├── CHANGELOG.md
+├── README.md
+├── README.zh-CN.md
+└── WEBAPP.zh-CN.md
+```
+
+## 环境安装
+
+推荐在 Linux 上使用 Conda 或 Mamba：
 
 ```bash
 conda env create -f environment.yml
 conda activate sanger16s
 ```
 
-如果使用 Mamba：
+`environment.yml` 已包含：
+
+- `python>=3.10`
+- `blast`
+- `flask`
+- `seqkit`
+- `vsearch`
+- `minimap2`
+- `samtools`
+
+FASTQ 共识流程还要求系统可用：
+
+- `bash`
+- `gzip`
+
+## 命令行用法
+
+检查 BLAST 和数据库：
 
 ```bash
-mamba env create -f environment.yml
-conda activate sanger16s
+python sanger16s.py check --db-dir /data/blast/16s-db
 ```
 
-## 2. 检查环境
+下载本地 16S BLAST 数据库：
 
 ```bash
-python sanger16s.py check --db-dir db
+python sanger16s.py setup-db --db-dir /data/blast/16s-db
 ```
 
-第一次运行时，只要已经安装好 Conda 环境，通常会看到 `blastn` 和
-`update_blastdb.pl` 可以找到，但数据库会提示缺失。这是正常的，因为本地
-NCBI 16S 数据库还没有下载。
+这里的 `--db-dir` 指的是“本地 BLAST 数据库文件所在目录”，例如里面应包含
+`16S_ribosomal_RNA.nsq`、`16S_ribosomal_RNA.nin` 等文件，并不是固定要写成 `db`。
 
-## 3. 下载本地 NCBI 16S 数据库
-
-服务器需要能够连接 NCBI。
+直接从 FASTA 批量鉴定：
 
 ```bash
-python sanger16s.py setup-db --db-dir db
+python sanger16s.py run \
+  --input ./fasta_files \
+  --db-dir /data/blast/16s-db \
+  --out ./results.csv
 ```
 
-这个命令会把 NCBI `16S_ribosomal_RNA` BLAST 数据库下载并解压到 `db/`
-目录中。数据库只需要下载一次，后续批量分析可以重复使用。
+## CSV 输出字段
 
-## 4. 批量运行鉴定
+- `sample_file`
+- `query_id`
+- `query_length`
+- `best_accession`
+- `best_title`
+- `organism_name`
+- `percent_identity`
+- `query_coverage`
+- `alignment_length`
+- `mismatches`
+- `gaps`
+- `evalue`
+- `bitscore`
+- `confidence`
+- `note`
 
-把 FASTA 文件放到同一个文件夹中，例如：
+`confidence` 的含义：
 
-```text
-fasta_files/
-  sample_001.fasta
-  sample_002.fasta
-  sample_003.fa
-```
+- `species_high`
+- `genus_or_close_species`
+- `low_confidence`
+- `no_result`
 
-然后运行：
+## 网页服务
+
+网页服务支持两种任务模式：
+
+- `FASTA -> BLAST`
+- `FASTQ -> consensus -> BLAST`
+
+启动示例：
 
 ```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv
+python sanger16s.py serve \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --db-dir /data/blast/16s-db \
+  --db-version 2026-06-05 \
+  --consensus-pipeline-script ./run_16s_consensus_pipeline.sh \
+  --work-dir ./web-work \
+  --threads 8 \
+  --queue-workers 1 \
+  --max-target-seqs 1 \
+  --max-upload-mb 64
 ```
 
-脚本会递归读取 `.fasta`、`.fa`、`.fas` 和 `.fna` 文件。默认使用文件名作为
-样本名。如果一个 FASTA 文件里有多条序列，每条序列会在结果 CSV 中单独占
-一行。
+更完整的网页部署说明见 [WEBAPP.zh-CN.md](./WEBAPP.zh-CN.md)。
 
-## CSV 结果字段
+## 部署示例配置
 
-输出 CSV 包含以下列：
+仓库中附带了公开版常用部署配置示例：
 
-- `sample_file`：输入 FASTA 文件名
-- `query_id`：FASTA 中的序列 ID
-- `query_length`：输入序列长度
-- `best_accession`：最佳命中的 NCBI accession
-- `best_title`：最佳命中的完整标题
-- `organism_name`：最佳命中的物种或分类名称
-- `percent_identity`：序列一致性百分比
-- `query_coverage`：query 覆盖度
-- `alignment_length`：比对长度
-- `mismatches`：错配数量
-- `gaps`：gap 数量
-- `evalue`：BLAST E-value
-- `bitscore`：BLAST bitscore
-- `confidence`：鉴定置信等级
-- `note`：备注，例如无命中、序列字符被替换、存在多个接近命中等
-
-## 置信等级说明
-
-最佳 BLAST 命中按照以下优先级选择：
-
-1. `percent_identity` 最高
-2. `query_coverage` 最高
-3. `evalue` 最低
-4. `bitscore` 最高
-
-`confidence` 字段含义如下：
-
-- `species_high`：identity >= 99.0 且 coverage >= 95，物种水平可信度较高。
-- `genus_or_close_species`：identity >= 97.0 且 coverage >= 90，通常可作为属
-  或近缘物种参考。
-- `low_confidence`：低于上述阈值，但仍报告最高一致性的命中结果。
-- `no_result`：空序列、空文件或没有 BLAST 命中。
-
-如果多个物种水平命中非常接近，`note` 列会显示
-`multiple close hits; review manually`，建议人工复核。
-
-## 常用参数
-
-指定 BLAST 使用的 CPU 线程数：
-
-```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv --threads 8
-```
-
-调整每条序列保留的候选命中数量，用于判断是否存在多个接近命中：
-
-```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv --max-target-seqs 20
-```
+- `deploy/systemd/sanger16s-web.service.example`
+- `deploy/nginx/sanger16s-web.conf.example`
+- `deploy/sanger16s-web.env.example`
 
 ## 注意事项
 
-16S 序列并不总是能区分非常接近的细菌物种。因此，本工具报告的是“最高一致性
-命中 + 置信等级”，不会把低置信度结果强行解释为确定的物种鉴定。
+- `--work-dir` 下会保存上传文件、任务状态和结果 CSV。
+- FASTQ 模式依赖 `run_16s_consensus_pipeline.sh` 及 `scripts/` 下的 helper 脚本。
+- 16S 序列并不总能分辨非常接近的物种，低置信度结果应谨慎解释。
+
+## 许可证
+
+MIT，见 [LICENSE](./LICENSE)。

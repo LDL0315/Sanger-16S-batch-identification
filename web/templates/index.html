@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sanger16S Web</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    window.SANGER16S_CONFIG = {{ config | tojson }};
+  </script>
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="masthead">
+      <div class="masthead-copy">
+        <p class="eyebrow">Sanger16S Control Surface</p>
+        <h1>批量序列鉴定工作台</h1>
+        <p class="masthead-text">
+          支持两条任务路径：直接上传 FASTA 进行 BLAST 鉴定，或上传 FASTQ/FASTQ.GZ 先生成共识序列，再进入 16S 细菌种类判定。
+        </p>
+        <div class="version-row">
+          <span class="version-chip">软件版本 {{ config.appVersion }}</span>
+          <span class="version-chip">16S 数据库版本 {{ config.dbVersion }}</span>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <article class="overview-card overview-card-accent">
+          <span class="overview-label">Server</span>
+          <strong class="overview-value" id="healthText">Checking...</strong>
+          <p class="overview-note">检查 blastn、数据库和共识脚本是否都已就绪。</p>
+        </article>
+        <article class="overview-card">
+          <span class="overview-label">Jobs</span>
+          <strong class="overview-value" id="totalJobs">0</strong>
+          <p class="overview-note">当前任务总数。</p>
+        </article>
+        <article class="overview-card">
+          <span class="overview-label">Running</span>
+          <strong class="overview-value" id="runningJobs">0</strong>
+          <p class="overview-note">排队中和运行中的任务。</p>
+        </article>
+        <article class="overview-card">
+          <span class="overview-label">Completed</span>
+          <strong class="overview-value" id="completedJobs">0</strong>
+          <p class="overview-note">已完成并可下载 CSV 的任务。</p>
+        </article>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-column">
+        <section class="control-panel">
+          <div class="section-head">
+            <p class="section-kicker">Submission</p>
+            <h2>上传与参数</h2>
+          </div>
+
+          <form id="uploadForm" class="upload-form">
+            <label class="dropzone" id="dropzone">
+              <input id="files" name="files" type="file" multiple accept=".fasta,.fa,.fas,.fna,.fastq,.fq,.fastq.gz,.fq.gz">
+              <span class="dropzone-badge">Batch Upload</span>
+              <span class="dropzone-title">拖拽 FASTA 或 FASTQ 文件到这里</span>
+              <span class="dropzone-subtitle">支持 .fasta / .fa / .fas / .fna / .fastq / .fq / .fastq.gz / .fq.gz。单个任务内不要混传 FASTA 和 FASTQ。</span>
+            </label>
+
+            <ul id="selectedFiles" class="selected-files"></ul>
+
+            <div class="param-grid">
+              <label class="field">
+                <span class="field-label">Threads per job</span>
+                <input id="threads" name="threads" type="number" min="1" value="{{ config.defaultThreads }}">
+                <small class="field-note">BLAST 阶段使用的线程数。</small>
+              </label>
+              <label class="field">
+                <span class="field-label">Max target seqs</span>
+                <input id="maxTargetSeqs" name="max_target_seqs" type="number" min="1" value="{{ config.defaultMaxTargetSeqs }}">
+                <small class="field-note">默认值为 1，仅保留最佳命中。</small>
+              </label>
+            </div>
+
+            <div class="submit-row">
+              <button type="submit" id="submitButton">提交分析任务</button>
+              <p id="formMessage" class="form-message"></p>
+            </div>
+          </form>
+        </section>
+
+        <section class="control-panel compact-panel">
+          <div class="section-head">
+            <p class="section-kicker">Runtime</p>
+            <h2>运行环境</h2>
+          </div>
+          <div class="info-list">
+            <div class="info-item">
+              <span class="info-label">Database Prefix</span>
+              <strong class="info-value mono">{{ config.dbPrefix }}</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Supported Input</span>
+              <strong class="info-value">{{ config.supportedInputText }}</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Upload Limit</span>
+              <strong class="info-value">{{ config.maxUploadMb }} MB</strong>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="board-column">
+        <div class="board-header">
+          <div>
+            <p class="section-kicker">Activity Board</p>
+            <h2>任务看板</h2>
+          </div>
+          <div class="board-legend">
+            <span class="legend-chip queued">Queued / Running</span>
+            <span class="legend-chip completed">Completed</span>
+            <span class="legend-chip failed">Failed</span>
+          </div>
+        </div>
+
+        <div id="jobsEmpty" class="empty-state">
+          <div class="empty-mark">01</div>
+          <h3>还没有分析任务</h3>
+          <p>新任务会在这里显示运行模式、阶段、结果统计和 CSV 下载入口。</p>
+        </div>
+        <div id="jobsList" class="jobs-list"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-copy">
+        <span>软件开发：Danlei Liu</span>
+        <span>Copyright © 2026 Sanger16S Web. All rights reserved.</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

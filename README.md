@@ -1,68 +1,128 @@
-# Sanger 16S batch identification
+# Sanger16S
 
-This tool batch-processes Sanger 16S FASTA files and reports the best local
-NCBI 16S BLAST hit for each sequence in one CSV file.
+Batch 16S bacterial identification with a local NCBI BLAST database, plus an optional LAN web UI for uploading FASTA or FASTQ files.
 
-## 1. Install on a Linux server
+## Quick Links
 
-Use Conda or Mamba. No `sudo` is required.
+- Chinese CLI guide: [README.zh-CN.md](./README.zh-CN.md)
+- Chinese web deployment guide: [WEBAPP.zh-CN.md](./WEBAPP.zh-CN.md)
+- Change history: [CHANGELOG.md](./CHANGELOG.md)
+- Release draft: [RELEASE_NOTES_v0.5.0.md](./RELEASE_NOTES_v0.5.0.md)
+- Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Deployment examples: [deploy/README.md](./deploy/README.md)
+
+## Features
+
+- Batch identification from FASTA files using local `blastn`
+- FASTQ-to-consensus preprocessing pipeline for ONT 16S data
+- CSV summary output with confidence labels
+- LAN web UI for upload, queueing, preview, and CSV download
+- Single-file CLI entry point: `sanger16s.py`
+
+## Repository Layout
+
+```text
+.
+- sanger16s.py
+- run_16s_consensus_pipeline.sh
+- scripts/
+- web/
+- deploy/
+- environment.yml
+- LICENSE
+- CHANGELOG.md
+- README.md
+- README.zh-CN.md
+- WEBAPP.zh-CN.md
+```
+
+## Requirements
+
+Recommended environment: Conda or Mamba on Linux.
+
+The provided `environment.yml` includes:
+
+- Python 3.10+
+- NCBI BLAST+
+- Flask
+- seqkit
+- vsearch
+- minimap2
+- samtools
+
+System-level tools expected by the FASTQ consensus pipeline:
+
+- `bash`
+- `gzip`
+
+## Quick Start
+
+Create the environment:
 
 ```bash
 conda env create -f environment.yml
 conda activate sanger16s
 ```
 
-If you use Mamba:
+Check BLAST and the local database:
 
 ```bash
-mamba env create -f environment.yml
-conda activate sanger16s
+python sanger16s.py check --db-dir /data/blast/16s-db
 ```
 
-## 2. Check the environment
+Download the NCBI 16S BLAST database:
 
 ```bash
-python sanger16s.py check --db-dir db
+python sanger16s.py setup-db --db-dir /data/blast/16s-db
 ```
 
-Before downloading the database, this command should find `blastn` and
-`update_blastdb.pl`, but it will report that the database is missing.
+Here `--db-dir` means the local directory that contains the BLAST database files such as
+`16S_ribosomal_RNA.nsq` and `16S_ribosomal_RNA.nin`. It is not a fixed literal name like `db`.
 
-## 3. Download the local NCBI 16S database
-
-The server must be able to connect to NCBI.
+Run direct FASTA identification:
 
 ```bash
-python sanger16s.py setup-db --db-dir db
+python sanger16s.py run \
+  --input ./fasta_files \
+  --db-dir /data/blast/16s-db \
+  --out ./results.csv
 ```
 
-This downloads and decompresses the NCBI `16S_ribosomal_RNA` BLAST database
-into `db/`.
+## Web UI
 
-## 4. Run batch identification
+Start the LAN web server:
 
-Put your FASTA files into one folder, for example:
+```bash
+python sanger16s.py serve \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --db-dir /data/blast/16s-db \
+  --db-version 2026-06-05 \
+  --consensus-pipeline-script ./run_16s_consensus_pipeline.sh \
+  --work-dir ./web-work \
+  --threads 8 \
+  --queue-workers 1 \
+  --max-target-seqs 1 \
+  --max-upload-mb 64
+```
+
+Supported upload modes:
+
+- FASTA: direct BLAST identification
+- FASTQ / FASTQ.GZ: consensus generation first, then BLAST identification
+
+## CLI Commands
 
 ```text
-fasta_files/
-  sample_001.fasta
-  sample_002.fasta
-  sample_003.fa
+check      Check executables and database files
+setup-db   Download and decompress the NCBI 16S BLAST database
+run        Run batch 16S identification from FASTA input
+serve      Start the LAN web UI
 ```
 
-Then run:
+## Output
 
-```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv
-```
-
-The script reads `.fasta`, `.fa`, `.fas`, and `.fna` files recursively. The
-file name is used as the sample name. If one FASTA file contains multiple
-records, each record is reported as one CSV row.
-
-## CSV columns
-
-The output CSV contains:
+The main CSV fields are:
 
 - `sample_file`
 - `query_id`
@@ -80,42 +140,27 @@ The output CSV contains:
 - `confidence`
 - `note`
 
-## Confidence labels
+Confidence labels:
 
-The best BLAST hit is selected by:
+- `species_high`
+- `genus_or_close_species`
+- `low_confidence`
+- `no_result`
 
-1. highest `percent_identity`
-2. highest `query_coverage`
-3. lowest `evalue`
-4. highest `bitscore`
+## Deployment Examples
 
-Confidence labels are:
+Example deployment files are included in:
 
-- `species_high`: identity >= 99.0 and coverage >= 95.
-- `genus_or_close_species`: identity >= 97.0 and coverage >= 90.
-- `low_confidence`: below those thresholds, but the best hit is still reported.
-- `no_result`: empty sequence, empty file, or no BLAST hit.
-
-If several species-level hits are extremely close, the `note` column reports
-`multiple close hits; review manually`.
-
-## Useful options
-
-Use more or fewer CPU threads:
-
-```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv --threads 8
-```
-
-Keep more BLAST candidate hits internally when deciding whether close hits
-exist:
-
-```bash
-python sanger16s.py run --input fasta_files --db-dir db --out results.csv --max-target-seqs 20
-```
+- `deploy/systemd/sanger16s-web.service.example`
+- `deploy/nginx/sanger16s-web.conf.example`
+- `deploy/sanger16s-web.env.example`
 
 ## Notes
 
-16S identity is not always enough to distinguish very closely related bacterial
-species. This tool reports the highest identity hit plus a confidence label, so
-low-confidence results are not forced into a definitive species call.
+- The web server stores uploaded files, job state, and output CSV files under `--work-dir`.
+- FASTQ mode requires `run_16s_consensus_pipeline.sh` and all helper scripts under `scripts/`.
+- 16S alone does not always resolve very closely related species. Treat low-confidence or ambiguous hits cautiously.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
